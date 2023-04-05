@@ -1,11 +1,13 @@
 import base64
 import logging
+import os
 import re
 from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
 from time import sleep
 
+import requests
 from phpserialize import serialize
 from slugify import slugify
 
@@ -16,6 +18,40 @@ logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", level=loggin
 
 
 class ToroplayHelper:
+    def get_header(self):
+        header = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E150",  # noqa: E501
+            "Accept-Encoding": "gzip, deflate",
+            # "Cookie": CONFIG.COOKIE,
+            "Cache-Control": "max-age=0",
+            "Accept-Language": "vi-VN",
+            "Referer": "https://french-anime.com/",
+        }
+        return header
+
+    def download_url(self, url):
+        return requests.get(url, headers=self.get_header())
+
+    def save_thumb(
+        self,
+        image_url: str,
+        title: str = "",
+        overwrite: bool = False,
+    ) -> str:
+        image_ext = image_url.split(".")[-1]
+        Path(CONFIG.COVER_SAVE_FOLDER).mkdir(parents=True, exist_ok=True)
+
+        thumb_image_name = f"{slugify(title)}.{image_ext}"
+        save_thumb_image_path = os.path.join(CONFIG.COVER_SAVE_FOLDER, thumb_image_name)
+        is_not_saved = not Path(save_thumb_image_path).is_file()
+        if overwrite or is_not_saved:
+            image = self.download_url(image_url)
+            with open(save_thumb_image_path, "wb") as f:
+                f.write(image.content)
+            is_not_saved = True
+
+        return [os.path.join("cover", thumb_image_name), is_not_saved]
+
     def generate_trglinks(
         self,
         server: str,
@@ -59,6 +95,17 @@ class ToroplayHelper:
         with open(f"log/{log_file}", "a") as f:
             print(f"{datetime_msg} LOG:  {msg}\n{'-' * 80}", file=f)
 
+    def get_saison_for_title(self, season_str: str) -> int:
+        season_str = season_str.replace("\n", " ").lower()
+        regex = re.compile(r"saison\s+(\d+)")
+        match = regex.search(season_str)
+        if match:
+            saison_for_title = " - Saison " + match.group(1)
+        else:
+            saison_for_title = ""
+
+        return saison_for_title
+
     def get_season_number(self, strSeason: str) -> int:
         strSeason = strSeason.split(" ")[0]
         res = ""
@@ -100,18 +147,6 @@ class ToroplayHelper:
         title = title
         season_number = "1"
 
-        try:
-            for seasonSplitText in CONFIG.SEASON_SPLIT_TEXTS:
-                if seasonSplitText in title:
-                    title, season_number = title.split(seasonSplitText)
-                    break
-
-        except Exception as e:
-            self.error_log(
-                msg=f"Failed to find title and season number\n{title}\n{e}",
-                log_file="toroplay.get_title_and_season_number.log",
-            )
-
         return [
             self.format_text(title),
             self.get_season_number(self.format_text(season_number)),
@@ -150,12 +185,15 @@ class ToroplayHelper:
         }
 
         key_mapping = {
-            "Réalisé par": "cast",
-            "Avec": "cast",
-            "Acteurs": "cast",
-            "Genre": "category",
-            "Date de sortie": "annee",
-            "Réalisateur": "directors",
+            "titre original": "field_title",
+            "réalisé par": "cast",
+            "avec": "cast",
+            "acteurs": "cast",
+            "genre": "category",
+            "date de sortie": "annee",
+            "réalisateur": "directors",
+            "durée": "field_runtime",
+            "version": "version",
         }
 
         for info_key in key_mapping.keys():
@@ -165,7 +203,9 @@ class ToroplayHelper:
         for info_key in ["cast", "directors"]:
             if info_key in post_data.keys():
                 post_data[f"{info_key}_tv"] = post_data[info_key]
-
+        post_data["field_runtime"] = post_data.get("field_runtime", "").replace(
+            "mn", "min"
+        )
         return post_data
 
     def get_timeupdate(self) -> datetime:
@@ -206,8 +246,52 @@ class ToroplayHelper:
         post_id = database.insert_into(table=f"{CONFIG.TABLE_PREFIX}posts", data=data)
         return post_id
 
+    def insert_thumb(self, post_data: dict):
+        thumb_insert_data, _ = helper.save_thumb(
+            post_data.get("poster_url"), post_data.get("title")
+        )
+
+        thumb_name = thumb_insert_data.split("/")[-1]
+        timeupdate = self.get_timeupdate()
+        thumb_post_data = (
+            0,
+            timeupdate,
+            timeupdate,
+            "",
+            thumb_name,
+            "",
+            "inherit",
+            "open",
+            "closed",
+            "",
+            thumb_name,
+            "",
+            "",
+            timeupdate,
+            timeupdate,
+            "",
+            0,
+            "",
+            0,
+            "attachment",
+            "image/png",
+            0,
+            # "",
+        )
+
+        thumb_id = database.insert_into(
+            table=f"{CONFIG.TABLE_PREFIX}posts", data=thumb_post_data
+        )
+        database.insert_into(
+            table=f"{CONFIG.TABLE_PREFIX}postmeta",
+            data=(thumb_id, "_wp_attached_file", thumb_insert_data),
+        )
+
+        return thumb_id
+
     def insert_film(self, post_data: dict) -> int:
         try:
+            thumb_id = self.insert_thumb(post_data)
             post_id = self.insert_post(post_data)
             timeupdate = self.get_timeupdate()
 
@@ -216,7 +300,12 @@ class ToroplayHelper:
                 (post_id, "_edit_lock", f"{int(timeupdate.timestamp())}:1"),
                 # _thumbnail_id
                 (post_id, "tr_post_type", "2"),
-                (post_id, "field_title", post_data["title"]),
+                (
+                    post_id,
+                    "field_title",
+                    post_data.get("field_title", post_data.get("title")),
+                ),
+                (post_id, "_thumbnail_id", thumb_id),
                 # (
                 #     post_id,
                 #     "field_trailer",
@@ -255,7 +344,7 @@ class ToroplayHelper:
                 annee = (
                     post_id,
                     "field_date",
-                    post_data["annee"][0],
+                    post_data["annee"].strip(),
                 )
 
                 tvseries_postmeta_data.append(annee)
@@ -271,7 +360,7 @@ class ToroplayHelper:
                 )
 
                 movie_postmeta_data.append(
-                    (post_id, "field_runtime", f"{post_data['field_runtime']}m"),
+                    (post_id, "field_runtime", f"{post_data['field_runtime']}"),
                 )
 
             if post_data["post_type"] == "series":
@@ -304,15 +393,20 @@ class ToroplayHelper:
         is_title: str = False,
         term_slug: str = "",
     ):
-        terms = [term.strip() for term in terms.split(",")] if not is_title else [terms]
+        try:
+            terms = (
+                [term.strip() for term in terms.split(",")] if not is_title else [terms]
+            )
+        except Exception as e:
+            print(e)
         termIds = []
         for term in terms:
-            term_slug = slugify(term_slug) if term_slug else slugify(term)
+            term_insert_slug = slugify(term_slug) if term_slug else slugify(term)
             cols = "tt.term_taxonomy_id, tt.term_id"
             table = (
                 f"{CONFIG.TABLE_PREFIX}term_taxonomy tt, {CONFIG.TABLE_PREFIX}terms t"
             )
-            condition = f't.slug = "{term_slug}" AND tt.term_id=t.term_id AND tt.taxonomy="{taxonomy}"'
+            condition = f't.slug = "{term_insert_slug}" AND tt.term_id=t.term_id AND tt.taxonomy="{taxonomy}"'
 
             be_term = database.select_all_from(
                 table=table, condition=condition, cols=cols
@@ -320,7 +414,7 @@ class ToroplayHelper:
             if not be_term:
                 term_id = database.insert_into(
                     table=f"{CONFIG.TABLE_PREFIX}terms",
-                    data=(term, term_slug, 0),
+                    data=(term, term_insert_slug, 0),
                 )
                 term_taxonomy_count = 1 if taxonomy == "seasons" else 0
                 term_taxonomy_id = database.insert_into(
@@ -343,15 +437,25 @@ class ToroplayHelper:
 
         return termIds
 
+    def get_server_name_from(self, link: str) -> str:
+        server_name = ""
+        result = re.search(r"(?<=//)(.*?)(?=/)", link)
+        if result:
+            server_name = result.group(1)
+
+        return server_name
+
 
 helper = ToroplayHelper()
 
 
 class Toroplay:
-    def __init__(self, film: dict, film_links: dict):
+    def __init__(self, film: dict, film_links: dict, season_str: str = ""):
         self.film = film
         self.film["quality"] = self.film["extra_info"].get("Qualité", "HD")
+        self.film["version"] = self.film["extra_info"].get("version", "HD")
         self.film_links = film_links
+        self.season_str = season_str
 
     def insert_movie_details(self, post_id):
         if not self.film_links:
@@ -363,18 +467,18 @@ class Toroplay:
         len_episode_links = 0
         postmeta_data = []
 
-        for server_name, server_links in self.film_links.items():
-            for language, link in server_links.items():
+        for _, movie_links in self.film_links.items():
+            for link in movie_links:
                 if link:
                     postmeta_data.append(
                         (
                             post_id,
                             f"trglinks_{len_episode_links}",
                             helper.generate_trglinks(
-                                server=server_name,
+                                server=helper.get_server_name_from(link),
                                 link=link,
-                                lang=language,
-                                quality=server_name,
+                                lang=self.film["version"],
+                                quality=helper.get_server_name_from(link),
                             ),
                         )
                     )
@@ -382,6 +486,21 @@ class Toroplay:
 
         postmeta_data.append((post_id, "trgrabber_tlinks", len_episode_links))
         helper.insert_postmeta(postmeta_data)
+
+    def get_thumb_id_be(self, post_id):
+        condition = f"post_id={post_id} AND meta_key='_thumbnail_id'"
+        thumb_postmeta_thumb_id = database.select_all_from(
+            table=f"{CONFIG.TABLE_PREFIX}postmeta",
+            condition=condition,
+            cols="meta_value",
+        )
+        if thumb_postmeta_thumb_id:
+            thumb_id = thumb_postmeta_thumb_id[0][0]
+
+            self.film["cover_id"] = thumb_id
+            return
+
+        self.film["cover_id"] = "0"
 
     def insert_root_film(self) -> list:
         condition_post_name = slugify(self.film["post_title"])
@@ -401,9 +520,13 @@ class Toroplay:
                 self.film["extra_info"],
             )
 
-            return [helper.insert_film(post_data), True]
+            post_id, is_new_post_inserted = [helper.insert_film(post_data), True]
         else:
-            return [be_post[0][0], False]
+            post_id, is_new_post_inserted = [be_post[0][0], False]
+
+        self.get_thumb_id_be(post_id)
+
+        return post_id, is_new_post_inserted
 
     def update_meta_for_post_or_term(
         self, table, condition, new_meta_value, adding: bool = False
@@ -430,51 +553,15 @@ class Toroplay:
                 log_file="torotheme.update_season_number_of_episodes.log",
             )
 
-    def format_serie_film_links(self):
-        new_film_links = {}
-        for episode_title, episode_links in self.film_links.items():
-            is_has_link = False
-            for server, link in episode_links.items():
-                if link:
-                    is_has_link = True
-                    break
-
-            if not is_has_link:
-                continue
-
-            (
-                episode_title,
-                language,
-                episode_number,
-            ) = helper.get_episode_title_and_language_and_number(
-                episode_title=episode_title
-            )
-            if not episode_number:
-                continue
-
-            new_film_links.setdefault(episode_number, {})
-            new_film_links[episode_number]["title"] = episode_title
-
-            new_film_links[episode_number].setdefault("video_links", {})
-            new_film_links[episode_number]["video_links"][language] = episode_links
-
-        return new_film_links
-
-    def insert_episodes(self, post_id: int, season_term_id: int):
-        self.film_links = self.format_serie_film_links()
+    def insert_episodes(self, post_id: int, season_term_id: int, thumb_id: str = "0"):
         len_episodes = 0
 
-        for episode_number, episode in self.film_links.items():
-            episode_title = episode.get("title", "")
+        for episode_number, episode_links in self.film_links.items():
+            episode_term_name = self.film["post_title"] + f" x{episode_number}"
 
-            episode_term_name = (
-                self.film["post_title"]
-                + f' {self.film["season_number"]}x{episode_number}'
-            )
-            episode_term_slug = (
-                self.film["post_title"]
-                + f'-{self.film["season_number"]}x{episode_number}'
-            )
+            episode_title = self.film["post_title"] + f" x{episode_number}"
+
+            episode_term_slug = self.film["post_title"] + f"-x{episode_number}"
             episode_term_id, is_new_episode = helper.insert_terms(
                 post_id=post_id,
                 terms=episode_term_name,
@@ -494,23 +581,22 @@ class Toroplay:
                 (episode_term_id, "name", episode_title),
                 (episode_term_id, "season_number", self.film["season_number"]),
                 (episode_term_id, "tr_id_post", post_id),
-                (episode_term_id, "still_path_hotlink", self.film["poster_url"]),
+                (episode_term_id, "still_path", thumb_id),
             ]
 
             quality = self.film.get("quality", "HD")
 
-            episode_links = episode.get("video_links")
-            for language, server_links in episode_links.items():
-                for server_name, link in server_links.items():
+            for link in episode_links:
+                if link:
                     termmeta_data.append(
                         (
                             episode_term_id,
                             f"trglinks_{len_episode_links}",
                             helper.generate_trglinks(
-                                server=server_name,
+                                server=helper.get_server_name_from(link),
                                 link=link,
-                                lang=language,
-                                quality=server_name,
+                                lang=self.film["version"],
+                                quality=helper.get_server_name_from(link),
                             ),
                         )
                     )
@@ -533,9 +619,7 @@ class Toroplay:
         self.update_meta_for_post_or_term(table, condition, len_episodes, adding=True)
 
     def insert_season(self, post_id: int):
-        season_term_name = (
-            self.film["post_title"] + " - Saison " + self.film["season_number"]
-        )
+        season_term_name = self.film["post_title"]
         season_term_slug = self.film["post_title"] + " - " + self.film["season_number"]
         season_term_id, isNewSeason = helper.insert_terms(
             post_id=post_id,
@@ -567,19 +651,28 @@ class Toroplay:
         return season_term_id
 
     def insert_film(self):
+        title_to_get = self.film["title"]
+        if "saison" not in title_to_get.lower():
+            title_to_get += helper.get_saison_for_title(self.season_str)
+        if self.film["version"].lower() not in title_to_get.lower():
+            title_to_get += " - " + self.film["version"]
         (
             self.film["post_title"],
             self.film["season_number"],
-        ) = helper.get_title_and_season_number(self.film["title"])
+        ) = helper.get_title_and_season_number(title_to_get)
 
-        post_id, isNewPostInserted = self.insert_root_film()
+        post_id, is_new_post_inserted = self.insert_root_film()
+
+        if not post_id:
+            return
 
         if self.film["post_type"] != "series":
-            if isNewPostInserted:
+            if is_new_post_inserted:
                 self.insert_movie_details(post_id)
         else:
             # pass
             season_term_id = self.insert_season(post_id)
-            self.insert_episodes(post_id, season_term_id)
+            # self.insert_episodes(post_id, season_term_id)
+            self.insert_episodes(post_id, season_term_id, self.film["cover_id"])
 
         sleep(1)

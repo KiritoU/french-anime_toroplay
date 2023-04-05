@@ -12,7 +12,7 @@ crawler = Crawler()
 if __name__ == "__main__":
     while True:
         try:
-            crawler.crawl_page(CONFIG.FRENCH_STREAM_SERIES)
+            crawler.crawl_page(CONFIG.FRENCH_ANIME_VF)
         except Exception as e:
             pass
         time.sleep(CONFIG.WAIT_BETWEEN_LATEST)

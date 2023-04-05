@@ -149,30 +149,27 @@ class Helper:
 
         return res
 
-    def get_title_and_season_number(self, series9_title: str) -> list:
-        title = series9_title
-        season_number = "1"
-
+    def get_title(self, soup: BeautifulSoup) -> str:
         try:
-            for seasonSplitText in CONFIG.SEASON_SPLIT_TEXTS:
-                if seasonSplitText in series9_title:
-                    title, season_number = series9_title.split(seasonSplitText)
-                    break
+            title = soup.find("header", class_="full-title")
+            return title.text.strip()
 
         except Exception as e:
-            self.error_log(
-                msg=f"Failed to find title and season number\n{series9_title}\n{e}",
-                log_file="helper.get_title_and_season_number.log",
-            )
+            return ""
 
-        return [
-            self.format_text(title),
-            self.get_season_number(self.format_text(season_number)),
-        ]
-
-    def get_description_from(self, fmain: BeautifulSoup) -> str:
+    def get_cover_img_src(self, soup: BeautifulSoup) -> str:
         try:
-            fdesc = fmain.find("div", class_="fdesc")
+            cover_img_src = soup.find("img", {"id": "posterimg"}).get("src")
+            if "http" not in cover_img_src:
+                cover_img_src = CONFIG.FRENCH_ANIME_HOMEPAGE + cover_img_src
+            return cover_img_src
+
+        except Exception as e:
+            return ""
+
+    def get_description_from(self, soup: BeautifulSoup) -> str:
+        try:
+            fdesc = soup.find("div", class_="fdesc")
             return fdesc.text
 
         except Exception as e:
@@ -226,16 +223,16 @@ class Helper:
             res["Duration"] = res["Duration"].replace("min", "").strip()
         return res
 
-    def get_extra_info_from(self, fmain: BeautifulSoup) -> dict:
+    def get_extra_info_from(self, soup: BeautifulSoup) -> dict:
         extra_info = {}
         try:
-            flist = fmain.find("div", class_="flist")
-            lis = flist.find_all("li")
+            mov_list = soup.find("ul", class_="mov-list")
+            lis = mov_list.find_all("li")
             for li in lis:
-                key = li.find("span").text
-                value = li.text.replace(key, "").strip()
+                key = li.find("div", class_="mov-label").text
+                value = li.find("div", class_="mov-desc").text
 
-                key = key.replace(":", "").strip()
+                key = key.replace(":", "").strip().lower()
                 extra_info[key] = value
 
         except Exception as e:
