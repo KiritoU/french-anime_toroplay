@@ -1,0 +1,2 @@
+Con này để tránh lỗi thì em recommend là chạy xong tvseries_crawl.py thì mới chạy riêng tv_update.py nhé
+Chỉ chạy 1 trong 2
