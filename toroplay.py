@@ -89,6 +89,20 @@ class ToroplayHelper:
     def format_text(self, text: str) -> str:
         return text.strip("\n").replace('"', "'").strip()
 
+    def convert_to_minutes(self, time_str):
+        # Extract hours and minutes from the string using regex
+        hours = 0
+        minutes = 0
+        match = re.findall(r"\d+", time_str)
+        if len(match) > 0:
+            if "h" in time_str:
+                hours = int(match[0])
+            if "m" in time_str:
+                minutes = int(match[-1])
+        # Convert hours to minutes and add to minutes
+        total_minutes = hours * 60 + minutes
+        return str(total_minutes)
+
     def error_log(self, msg: str, log_file: str = "failed.log"):
         datetime_msg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         Path("log").mkdir(parents=True, exist_ok=True)
@@ -203,8 +217,8 @@ class ToroplayHelper:
         for info_key in ["cast", "directors"]:
             if info_key in post_data.keys():
                 post_data[f"{info_key}_tv"] = post_data[info_key]
-        post_data["field_runtime"] = post_data.get("field_runtime", "").replace(
-            "mn", "min"
+        post_data["field_runtime"] = self.convert_to_minutes(
+            post_data.get("field_runtime", "").replace("mn", "min")
         )
         return post_data
 
