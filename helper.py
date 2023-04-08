@@ -37,8 +37,8 @@ class Helper:
 
     def download_url(self, url):
         proxies = {
-            "http": f"socks5://115.72.143.49:5609",
-            "https": f"socks5://115.72.143.49:5609",
+            "http": f"http://pjpdrcuk:apewx7x0gz6a@45.94.47.66:8110",
+            "https": f"http://pjpdrcuk:apewx7x0gz6a@45.94.47.66:8110",
         }
         return requests.get(
             url,
