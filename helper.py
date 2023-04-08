@@ -25,7 +25,7 @@ class Helper:
             # "Cookie": CONFIG.COOKIE,
             "Cache-Control": "max-age=0",
             "Accept-Language": "vi-VN",
-            "Referer": "https://mangabuddy.com/",
+            # "Referer": "https://mangabuddy.com/",
         }
         return header
 
@@ -36,7 +36,15 @@ class Helper:
             print(f"{datetime_msg} LOG:  {msg}\n{'-' * 80}", file=f)
 
     def download_url(self, url):
-        return requests.get(url, headers=self.get_header())
+        proxies = {
+            "http": f"socks5://115.72.143.49:5609",
+            "https": f"socks5://115.72.143.49:5609",
+        }
+        return requests.get(
+            url,
+            headers=self.get_header(),
+            proxies=proxies,
+        )
 
     def format_text(self, text: str) -> str:
         return text.strip("\n").replace('"', "'").strip()
