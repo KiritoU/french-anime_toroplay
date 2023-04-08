@@ -16,7 +16,7 @@ if __name__ == "__main__":
                 f"{CONFIG.FRENCH_ANIME_FILMS}/page/{i}/",
                 post_type="movies",
             )
-            if not crawled_page and i >= CONFIG.FRENCH_ANIME_FILMS:
+            if not crawled_page and i >= CONFIG.FRENCH_ANIME_FILMS_LAST_PAGE:
                 i = 2
             else:
                 i += 1
