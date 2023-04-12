@@ -9,7 +9,7 @@ logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", level=loggin
 crawler = Crawler()
 
 if __name__ == "__main__":
-    i = 2
+    i = 1
     while True:
         try:
             crawled_page = crawler.crawl_page(
@@ -17,7 +17,7 @@ if __name__ == "__main__":
                 post_type="movies",
             )
             if not crawled_page and i >= CONFIG.FRENCH_ANIME_FILMS_LAST_PAGE:
-                i = 2
+                i = 1
             else:
                 i += 1
         except Exception as e:
