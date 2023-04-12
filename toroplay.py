@@ -471,6 +471,10 @@ class Toroplay:
         self.film = film
         self.film["quality"] = self.film["extra_info"].get("Qualité", "HD")
         self.film["version"] = self.film["extra_info"].get("version", "HD")
+        if "Animes VF".lower() in self.film["extra_info"].get("genre").lower():
+            self.film["version"] = "FRENCH"
+        elif "Animes VOSTFR".lower() in self.film["extra_info"].get("genre").lower():
+            self.film["version"] = "VOSTFR"
         self.film_links = film_links
         self.season_str = season_str
 
