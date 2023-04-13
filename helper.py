@@ -1,5 +1,6 @@
 import base64
 import os
+import random
 import subprocess
 from datetime import datetime, timedelta
 from html import escape
@@ -35,11 +36,29 @@ class Helper:
         with open(f"log/{log_file}", "a") as f:
             print(f"{datetime_msg} LOG:  {msg}\n{'-' * 80}", file=f)
 
+    def pick_proxy(self):
+        try:
+            with open("proxies.txt", "r") as f:
+                lines = f.readlines()
+
+            index = random.randint(0, 99)
+            return lines[index].strip().strip("\n")
+        except:
+            return ""
+
     def download_url(self, url):
-        proxies = {
-            "http": f"http://pjpdrcuk:apewx7x0gz6a@45.155.68.129:8133",
-            "https": f"http://pjpdrcuk:apewx7x0gz6a@45.155.68.129:8133",
-        }
+        picked_proxy = self.pick_proxy()
+        proxies = {}
+        if picked_proxy:
+            try:
+                IP, PORT, USERNAME, PASSWORD = picked_proxy.split(":")
+                proxies = {
+                    "http": f"http://{USERNAME}:{PASSWORD}@{IP}:{PORT}",
+                    "https": f"http://{USERNAME}:{PASSWORD}@{IP}:{PORT}",
+                }
+                print(f"Picked proxy: {picked_proxy}")
+            except:
+                pass
         return requests.get(
             url,
             headers=self.get_header(),
