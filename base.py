@@ -1,4 +1,5 @@
 import logging
+import re
 
 from bs4 import BeautifulSoup
 
@@ -29,6 +30,7 @@ class Crawler:
         if eps:
             episodes = eps.text.split("\n")
             for episode in episodes:
+                episode = re.sub(r"!+", "!", episode)
                 episode_name, links = episode.split("!")
                 film_links[episode_name] = links.split(",")
 
