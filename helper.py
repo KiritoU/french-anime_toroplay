@@ -43,7 +43,8 @@ class Helper:
 
             index = random.randint(0, 99)
             return lines[index].strip().strip("\n")
-        except:
+        except Exception as e:
+            print(e)
             return ""
 
     def download_url(self, url):
@@ -57,7 +58,8 @@ class Helper:
                     "https": f"http://{USERNAME}:{PASSWORD}@{IP}:{PORT}",
                 }
                 print(f"Picked proxy: {picked_proxy}")
-            except:
+            except Exception as e:
+                print(e)
                 pass
         return requests.get(
             url,
