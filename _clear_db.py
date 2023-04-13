@@ -61,9 +61,9 @@ def main():
         "seasons",
         "revision",
         "episodes",
-        "movies",
+        # "movies",
         "series",
-        "attachment",
+        # "attachment",
         # "seasons",
     ]
     for post_type in post_types:
